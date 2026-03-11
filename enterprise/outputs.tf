@@ -1,10 +1,9 @@
 output "organizations" {
-  description = "Map of created organizations with their IDs"
+  description = "Map of organizations managed by this config"
   value = {
     for org_name, org in github_enterprise_organization.orgs : org_name => {
-      node_id     = org.id
-      database_id = org.database_id
-      name        = org.name
+      name         = org.name
+      display_name = org.display_name
     }
   }
 }

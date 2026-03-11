@@ -20,8 +20,13 @@ data "github_enterprise" "this" {
 
 # ─── Organizations ───────────────────────────────────────────────
 # Creates organizations under the enterprise.
-# admin_logins assigns the initial org owners — these users form the
-# org's admin team and can then manage the org via the org-level workflow.
+#
+# PREREQUISITE: The enterprise GitHub App must be installed on each
+# organization for the provider to read org-level attributes. For
+# brand-new orgs the enterprise-apply workflow auto-installs the app
+# immediately after terraform apply. For the very first (bootstrap)
+# org, create the org manually and install the app before importing
+# it into Terraform state — see README.md for details.
 
 resource "github_enterprise_organization" "orgs" {
   for_each = var.organizations
@@ -32,8 +37,4 @@ resource "github_enterprise_organization" "orgs" {
   description   = each.value.description
   billing_email = each.value.billing_email
   admin_logins  = each.value.admin_logins
-
-  lifecycle {
-    ignore_changes = [display_name, description, billing_email]
-  }
 }
