@@ -1,320 +1,382 @@
-# GitHub Organization Governance with Terraform
+---
+title: GitHub Organization Governance with Terraform
+description: Manage GitHub Enterprise organizations, settings, teams, repositories, and members using IaC with a single enterprise-level GitHub App
+---
 
-Manage a GitHub organization — settings, teams, and members — using Infrastructure as Code (Terraform) with automated GitHub Actions workflows.
+## Overview
 
-## What This Does
+Manage GitHub Enterprise organizations, settings, teams, repositories, and members using Infrastructure as Code (Terraform) with automated GitHub Actions workflows — all powered by a **single enterprise-level GitHub App**.
 
-- **Configures organization settings** (permissions, policies, security defaults)
-- **Manages teams and members** declaratively
-- **Automates plan/apply** through GitHub Actions with PR-based reviews
-- **Uses GitHub App authentication** — no personal access tokens, fully unattended, and SAML SSO–safe
+## Architecture
 
-> **Note** — This module manages an **existing** organization. Organization creation is a one-time enterprise admin task done through the GitHub UI (see [Why Not Create the Org via Terraform?](#why-not-create-the-org-via-terraform) for details).
+This repository uses a **two-tier model** with separate responsibilities. Both tiers share the **same GitHub App**, each using a different installation of that app.
 
-## Prerequisites
-
-1. **GitHub Enterprise Cloud** account with an **existing organization**
-2. **Terraform** >= 1.0 and **Git** installed locally (for optional local testing)
-
-## Setup Guide
-
-### Step 1 — Create a GitHub App
-
-1. Open your organization's app settings:
-   `https://github.com/organizations/<org-name>/settings/apps/new`
-   (or **Organization settings → Developer settings → GitHub Apps → New GitHub App**)
-2. Fill in the basics:
-
-   | Field | Value |
-   |---|---|
-   | **App name** | `Terraform Governance` (or any name you like) |
-   | **Homepage URL** | Your repository URL (or any placeholder) |
-   | **Webhook → Active** | **Uncheck** (no webhook needed) |
-
-3. Under **Permissions**, grant:
-
-   | Category | Permission | Access |
-   |---|---|---|
-   | Organization | Administration | **Read & write** |
-   | Organization | Members | **Read & write** |
-
-   No other permissions are needed.
-
-4. Under **Where can this GitHub App be installed?**, select **Only on this account**.
-5. Click **Create GitHub App**.
-6. On the app page note the **App ID** (displayed near the top).
-7. Scroll to **Private keys → Generate a private key** — a `.pem` file downloads. Keep it safe.
-
-### Step 2 — Install the GitHub App
-
-1. On the app settings page, click **Install App** (left sidebar).
-2. Click **Install** next to your organization.
-3. Choose **All repositories** (the app needs org-level access, not repo-level).
-4. Click **Install**.
-5. Note the **Installation ID** from the browser URL:
-   `https://github.com/organizations/<org-name>/settings/installations/<installation_id>`
-
-### Step 3 — Clone or Create This Repository
-
-```bash
-git clone https://github.com/YOUR-ORG/gh-tf-governance.git
-cd gh-tf-governance
-```
-
-### Step 4 — Configure Organization Settings
-
-All non-secret configuration lives in `terraform.auto.tfvars` (committed to Git).
-
-| Layer | Location | Contents | Committed? |
-|---|---|---|---|
-| **Config** | `terraform.auto.tfvars` | App ID, Installation ID, org name, teams, members, policies | ✅ Yes |
-| **Secret** | GitHub Actions secret | GitHub App private key (`github_app_pem_file`) | ❌ No |
-
-Edit `terraform.auto.tfvars`:
-
-```hcl
-# GitHub App Authentication
-github_app_id              = "123456"       # App ID from Step 1
-github_app_installation_id = "78901234"     # Installation ID from Step 2
-
-# Organization Identity
-github_organization = "your-org-name"
-billing_email       = "billing@example.com"
-
-# Org display, policies, teams, members …
-```
-
-> **Important** — Never add `github_app_pem_file` (the private key) to any committed file.
-
-### Step 5 — Add the GitHub Actions Secret
-
-Go to **Repository Settings → Secrets and variables → Actions → New repository secret**:
-
-| Secret name | Value |
-|---|---|
-| `GH_APP_PRIVATE_KEY` | Paste the **entire** contents of the `.pem` file (including the `-----BEGIN/END RSA PRIVATE KEY-----` lines) |
-
-No repository **variables** are needed — everything else is in `terraform.auto.tfvars`.
-
-### Step 6 — Configure Environment Protection (Recommended)
-
-1. Go to **Repository Settings → Environments → New environment**
-2. Name it `production`
-3. Enable **Required reviewers** and add yourself or team leads
-4. Save protection rules
-
-This ensures Terraform Apply requires human approval before changing your organization.
-
-### Step 7 — Local Testing (Optional)
-
-```bash
-terraform init
-terraform fmt
-terraform validate
-terraform plan
-```
-
-For local runs, provide the private key via an environment variable:
-
-```powershell
-# PowerShell
-$env:TF_VAR_github_app_pem_file = Get-Content -Raw "path/to/your-app.pem"
-```
-
-```bash
-# Linux / macOS
-export TF_VAR_github_app_pem_file="$(cat path/to/your-app.pem)"
-```
-
-Terraform auto-loads `terraform.auto.tfvars` for everything else (App ID, Installation ID, org config).
-
-### Step 8 — Push and Create a Pull Request
-
-1. Push your configuration:
-
-   ```bash
-   git add .
-   git commit -m "Configure organization settings"
-   git push origin main
-   ```
-
-2. For subsequent changes, use a branch:
-
-   ```bash
-   git checkout -b update-org-settings
-   # Edit .tf or .auto.tfvars files
-   git add .
-   git commit -m "Update organization settings"
-   git push origin update-org-settings
-   ```
-
-3. Open a Pull Request — the **Terraform Plan** workflow runs automatically and posts the plan as a PR comment.
-
-### Step 9 — Apply Changes
-
-1. Merge the PR to `main`.
-2. The **Terraform Apply** workflow runs automatically.
-3. If environment protection is configured, approve the deployment when prompted.
-4. Terraform applies the declared settings, teams, and members to your organization.
-
-## How It Works
-
-### Why a GitHub App Instead of a PAT?
-
-| | Personal Access Token | GitHub App |
-|---|---|---|
-| **SAML SSO** | Blocked until manually authorized per org | ✅ Bypasses SAML automatically |
-| **Scope** | Tied to a personal user account | Scoped to the org installation |
-| **Expiry** | Expires — requires manual renewal | Private key does not expire |
-| **Audit trail** | Actions attributed to a person | Actions attributed to the app |
-| **Permissions** | Broad OAuth scopes | Fine-grained per-resource permissions |
-
-### Why Not Create the Org via Terraform?
-
-The `github_enterprise_organization` resource requires **enterprise-level** permissions. GitHub App enterprise permissions are only available when the app is registered under the **enterprise account itself** (not under an organization). Even then, the Terraform GitHub provider accepts a single `installation_id`, and enterprise installations and organization installations are separate — you cannot span both in one provider block.
-
-Since org creation is a **one-time** action, it is simpler and more reliable to create the org through the enterprise admin UI:
-
-**Enterprise settings → Organizations → New organization**
-
-After the org exists, this module handles all ongoing governance via an org-level GitHub App.
-
-### Workflows
-
-**Terraform Plan** (`.github/workflows/terraform-plan.yml`)
-
-- Triggers on pull requests that modify `.tf` or `.auto.tfvars` files
-- Runs `terraform plan` and posts the output as a PR comment
-- Does **not** change anything
-
-**Terraform Apply** (`.github/workflows/terraform-apply.yml`)
-
-- Triggers on push to `main` (same file patterns) or manual dispatch
-- Runs `terraform plan` then `terraform apply`
-- Uses the `production` environment gate (if configured)
-- Creates a GitHub issue on failure
-
-### File Structure
+| Tier           | Who                  | What                                            | Directory       | App Installation       |
+|----------------|----------------------|--------------------------------------------------|-----------------|------------------------|
+| **Enterprise** | IT / Platform team   | Create organizations, assign initial org owners  | `enterprise/`   | Enterprise installation |
+| **Organization** | Org admin team     | Org settings, policies, teams, repos, members    | `orgs/<org>/`   | Per-org installation    |
 
 ```text
 .
-├── .github/
-│   └── workflows/
-│       ├── terraform-plan.yml        # Runs plan on PRs
-│       └── terraform-apply.yml       # Applies on merge to main
-├── main.tf                           # Provider + all resources
-├── variables.tf                      # Input variable definitions
-├── outputs.tf                        # Output values
-├── versions.tf                       # Terraform & provider versions
-├── terraform.auto.tfvars             # Committed org config (no secrets)
-├── .terraform.lock.hcl               # Provider lock file (committed)
-├── .gitignore                        # Git ignore rules
-└── README.md                         # This guide
+├── enterprise/                         # Tier 1 — IT manages the enterprise
+│   ├── main.tf                         #   Creates orgs + assigns admin_logins
+│   ├── variables.tf
+│   ├── outputs.tf
+│   ├── versions.tf
+│   └── enterprise.auto.tfvars          #   Enterprise config (committed)
+│
+├── orgs/                               # Tier 2 — Org admins manage each org
+│   └── rla-cf-gov02/                   #   One directory per organization
+│       ├── main.tf                     #     Settings, teams, repos, members
+│       ├── variables.tf
+│       ├── outputs.tf
+│       ├── versions.tf
+│       └── rla-cf-gov02.auto.tfvars    #     Org config (committed)
+│
+├── .github/workflows/
+│   ├── enterprise-plan.yml             # Plan on PRs touching enterprise/
+│   ├── enterprise-apply.yml            # Apply on merge — creates orgs + auto-installs app
+│   ├── org-plan.yml                    # Plan on PRs touching orgs/
+│   └── org-apply.yml                   # Apply on merge touching orgs/
+│
+├── .gitignore
+└── README.md
 ```
 
-## Common Customizations
+### How the Two Tiers Connect
 
-### Adding a Team
+1. **IT** adds an org to `enterprise/enterprise.auto.tfvars` with `admin_logins`.
+2. The enterprise workflow creates the org and **automatically installs the enterprise app on it**.
+3. The workflow logs the new **per-org installation ID**.
+4. An org admin creates `orgs/<org>/` with that installation ID in the `.auto.tfvars`.
+5. The org workflow applies settings, teams, repos, and members using the per-org installation.
 
-Edit `terraform.auto.tfvars`:
+> **Key benefit** — no per-org GitHub App needs to be created. The single enterprise app is reused everywhere. Only the installation ID differs per org.
+
+## Prerequisites
+
+* **GitHub Enterprise Cloud** account — you must be an enterprise **owner** for the enterprise tier
+* **Terraform** >= 1.0 and **Git** installed locally (for optional local testing)
+
+---
+
+## Setup Guide — Enterprise Tier (IT)
+
+### Step 1 — Create the Enterprise GitHub App
+
+1. Open your enterprise app settings:
+   `https://github.com/enterprises/<slug>/settings/apps/new`
+   (or **Enterprise settings → Developer settings → GitHub Apps → New GitHub App**)
+2. Fill in the basics:
+
+   | Field                  | Value                                        |
+   |------------------------|----------------------------------------------|
+   | **App name**           | `Enterprise Governance`                      |
+   | **Homepage URL**       | `https://github.com/enterprises/<slug>`      |
+   | **Webhook → Active**   | **Uncheck**                                  |
+
+3. Under **Permissions**, grant:
+
+   | Category     | Permission                                      | Access           |
+   |--------------|-------------------------------------------------|------------------|
+   | Enterprise   | Enterprise organisation installation repositories | **Read & write** |
+   | Enterprise   | Enterprise organisation installations            | **Read & write** |
+   | Enterprise   | Enterprise organisations                         | **Read & write** |
+   | Organization | Administration                                   | **Read & write** |
+   | Organization | Members                                          | **Read & write** |
+   | Repository   | Administration                                   | **Read & write** |
+
+   > The enterprise permissions allow the app to create organizations and install itself on them. The organization and repository permissions become active when the app is installed on an individual org.
+
+4. Under **Where can this GitHub App be installed?**, select **Only on this account**.
+5. Click **Create GitHub App**.
+6. Note the **App ID** (numeric) and the **Client ID** (`Iv23li…`).
+7. Scroll to **Private keys → Generate a private key** — save the `.pem` file securely.
+
+### Step 2 — Install the App on the Enterprise
+
+1. On the app page, select the created app.
+2. Go to **Install App** → install on the **enterprise**.
+3. Note the **Enterprise Installation ID** from the URL:
+   `https://github.com/enterprises/<slug>/settings/installations/<installation_id>`
+
+> This enterprise installation grants only enterprise-level permissions (create orgs, install apps). Organization and repository permissions are granted separately per org installation.
+
+### Step 3 — Add the Repository Secret
+
+In this repository, go to **Settings → Secrets and variables → Actions** and create:
+
+| Secret name          | Value                            |
+|----------------------|----------------------------------|
+| `ENT_APP_PRIVATE_KEY` | Full contents of the `.pem` file |
+
+This single secret is used by **all four workflows** (enterprise and org tiers).
+
+### Step 4 — Configure the Enterprise Environment
+
+1. Go to **Settings → Environments → New environment**
+2. Name it `enterprise`
+3. Enable **Required reviewers** — add IT team leads
+4. Save
+
+### Step 5 — Edit Enterprise Config
+
+Edit `enterprise/enterprise.auto.tfvars`:
 
 ```hcl
+github_app_id              = "123456"
+github_app_client_id       = "Iv23liXXXXXXXXXXXXXX"
+github_app_installation_id = "78901234"
+enterprise_slug            = "rla-cf-ent"
+
+organizations = {
+  "my-new-org" = {
+    display_name  = "My New Org"
+    description   = "Created via Terraform"
+    billing_email = "billing@example.com"
+    admin_logins  = ["alice", "bob"]
+  }
+}
+```
+
+### Step 6 — Push via PR
+
+1. Create a branch, commit your changes, push, and open a PR.
+2. The **Enterprise: Terraform Plan** workflow runs and posts the plan as a PR comment.
+3. Merge to `main` — the **Enterprise: Terraform Apply** workflow:
+   * Creates the organization(s)
+   * Automatically installs the enterprise app on each org
+   * Logs the **per-org installation ID** for each org in the workflow output
+
+---
+
+## Setup Guide — Organization Tier (Org Admins)
+
+After IT creates your org and the enterprise workflow installs the app, follow these steps.
+
+### Step 1 — Get the Org Installation ID
+
+The enterprise-apply workflow prints the per-org installation ID in its log output. Ask IT for this value, or find it in the workflow run log:
+
+```text
+► Installing app on org: my-new-org
+  ✅ Installed — org installation ID: 56789012
+     Use this installation ID in orgs/my-new-org/my-new-org.auto.tfvars
+```
+
+Alternatively, the installation ID is visible at:
+`https://github.com/organizations/<org-name>/settings/installations/<installation_id>`
+
+### Step 2 — Configure the Org Environment
+
+1. Go to **Settings → Environments → New environment**
+2. Name it `org-<org-name>` (e.g., `org-rla-cf-gov02`)
+3. Enable **Required reviewers** — add the org admin team
+4. Save
+
+### Step 3 — Create the Org Directory
+
+Create the directory `orgs/<org-name>/` with the standard Terraform files. Copy from the existing `orgs/rla-cf-gov02/` template and update:
+
+* `<org>.auto.tfvars` — set the **same App ID** as the enterprise tier, set the **org-specific installation ID** from Step 1, then configure settings, teams, and repos
+
+### Step 4 — Edit Org Config
+
+Edit `orgs/<org-name>/<org-name>.auto.tfvars`:
+
+```hcl
+# Same App ID as the enterprise tier — it is the same app
+github_app_id              = "123456"
+# Org-specific installation ID from the enterprise workflow output
+github_app_installation_id = "56789012"
+github_organization        = "my-new-org"
+billing_email              = "billing@example.com"
+
 teams = {
-  "engineering" = {
-    description = "Engineering team"
-    privacy     = "closed"    # visible to all org members
+  "my-new-org_admin" = {
+    description = "Organization administrators"
+    privacy     = "secret"
+    members = {
+      "alice" = "maintainer"
+      "bob"   = "maintainer"
+    }
   }
-  "security" = {
-    description = "Security team"
-    privacy     = "secret"    # visible only to team members
+  "developers" = {
+    description = "Development team"
+    privacy     = "closed"
+    members     = {}
+  }
+}
+
+repositories = {
+  "my-service" = {
+    description = "My microservice"
+    visibility  = "internal"
+    team_access = {
+      "developers" = "push"
+    }
   }
 }
 ```
 
-### Adding Members
+### Step 5 — Push via PR
 
-```hcl
-members = {
-  "octocat" = {
-    role = "member"
-  }
-  "admin-user" = {
-    role = "admin"
-  }
-}
+1. Create a branch, commit, push, open a PR.
+2. The **Org: Terraform Plan** workflow detects which org(s) changed and plans them individually.
+3. Merge to `main` — the **Org: Terraform Apply** workflow applies to each changed org.
+
+---
+
+## How It Works
+
+### Why One Enterprise App
+
+A single enterprise-level GitHub App covers both tiers by using **two kinds of installation**:
+
+| Installation target | What it can do                                       | Used by          |
+|---------------------|------------------------------------------------------|------------------|
+| **Enterprise**      | Create organizations, install the app on new orgs    | Enterprise tier  |
+| **Per-org**         | Manage org settings, teams, repos, members           | Organization tier |
+
+Each installation has its own `installation_id` and independent rate limit. The enterprise installation is **not** granted access to organization or repository resources — that access is provided by the per-org installation.
+
+The enterprise-apply workflow automates the per-org installation via the REST API:
+
+```text
+POST /enterprises/{enterprise}/apps/organizations/{org}/installations
 ```
 
-### Enabling Security Features
+This call is idempotent — if the app is already installed on an org, it is skipped.
 
-```hcl
-advanced_security_enabled_for_new_repositories               = true
-dependabot_alerts_enabled_for_new_repositories               = true
-secret_scanning_enabled_for_new_repositories                 = true
-secret_scanning_push_protection_enabled_for_new_repositories = true
+### Why a GitHub App Instead of a PAT
+
+|                    | Personal Access Token                      | GitHub App                                  |
+|--------------------|--------------------------------------------|---------------------------------------------|
+| **SAML SSO**       | Blocked until manually authorized per org  | ✅ Bypasses SAML automatically               |
+| **Scope**          | Tied to a personal user account            | Scoped to enterprise or org                 |
+| **Expiry**         | Expires — requires manual renewal          | Private key does not expire                 |
+| **Audit trail**    | Actions attributed to a person             | Actions attributed to the app               |
+| **Permissions**    | Broad OAuth scopes                         | Fine-grained per-resource permissions       |
+
+### Workflow Triggers
+
+| Path changed       | Plan workflow          | Apply workflow          | Credentials used                                       |
+|---------------------|------------------------|--------------------------|--------------------------------------------------------|
+| `enterprise/**`    | `enterprise-plan.yml`  | `enterprise-apply.yml`   | `ENT_APP_PRIVATE_KEY` + enterprise installation ID     |
+| `orgs/<org>/**`    | `org-plan.yml`         | `org-apply.yml`          | `ENT_APP_PRIVATE_KEY` + per-org installation ID        |
+
+The org workflows use a **matrix strategy** — if a single PR changes multiple orgs, each org is planned/applied independently in parallel.
+
+### Secrets
+
+Only **one** repository secret is needed:
+
+| Secret name          | Used by                    | Value                            |
+|----------------------|----------------------------|----------------------------------|
+| `ENT_APP_PRIVATE_KEY` | All four workflows         | Full contents of the `.pem` file |
+
+The `github_app_id` and `github_app_installation_id` values are non-secret and stored in the committed `.auto.tfvars` files.
+
+---
+
+## Adding a New Organization
+
+1. **IT** adds the org to `enterprise/enterprise.auto.tfvars` → merge PR → org is created and the app is auto-installed.
+2. **IT** shares the per-org installation ID from the workflow log with the org admin.
+3. **Org admin** creates `org-<org-name>` environment with required reviewers.
+4. **Org admin** copies `orgs/rla-cf-gov02/` as a template → `orgs/<new-org>/`, sets the org installation ID and configures settings in `.auto.tfvars`.
+5. Merge PR → org is configured.
+
+---
+
+## Local Testing
+
+### Enterprise Tier
+
+```bash
+cd enterprise
+terraform init
+terraform fmt
+terraform validate
+
+# Provide the private key
+export TF_VAR_github_app_pem_file="$(cat path/to/enterprise-app.pem)"
+terraform plan
 ```
 
-### Using a Remote State Backend
+### Org Tier
 
-For team use, uncomment the `backend` block in `versions.tf`:
+```bash
+cd orgs/rla-cf-gov02
+terraform init
+terraform fmt
+terraform validate
 
-```hcl
-backend "azurerm" {
-  resource_group_name  = "terraform-state-rg"
-  storage_account_name = "tfstatexxxxxx"
-  container_name       = "tfstate"
-  key                  = "github-org.tfstate"
-}
+# Same private key — it is the same app
+export TF_VAR_github_app_pem_file="$(cat path/to/enterprise-app.pem)"
+terraform plan
 ```
 
-Other backends (Terraform Cloud, S3, GCS) work the same way.
+PowerShell equivalent:
+
+```powershell
+$env:TF_VAR_github_app_pem_file = Get-Content -Raw "path/to/enterprise-app.pem"
+```
+
+---
 
 ## Troubleshooting
 
-### "this resource can only be used in the context of an organization"
-
-The provider cannot reach the org via the REST API.
-
-- Verify `github_app_installation_id` is correct.
-- Confirm the GitHub App is installed on the **target organization**.
-- Check the app has **Organization → Administration: Read & write**.
-
 ### "Could not negotiate an installation token"
 
-The app credentials are invalid.
-
-- `github_app_id` must match the App ID shown on the app settings page.
-- `github_app_pem_file` must contain the **full** PEM including `-----BEGIN/END RSA PRIVATE KEY-----`.
-- If you regenerated the private key, old keys are revoked — update the secret.
+* `github_app_id` must match the numeric App ID on the app settings page.
+* `github_app_installation_id` must match the correct installation: enterprise ID for the enterprise tier, per-org ID for the org tier.
+* `github_app_pem_file` must contain the **full** PEM including `-----BEGIN/END RSA PRIVATE KEY-----`.
+* If you regenerated the private key, old keys are revoked — update the `ENT_APP_PRIVATE_KEY` secret.
 
 ### "Resource protected by organization SAML enforcement"
 
-This should **not** happen with GitHub App auth (apps bypass SAML). If it does:
+This should **not** happen with GitHub App auth. Verify the provider is using `app_auth`, not a personal token.
 
-- Confirm the provider is using `app_auth`, not a personal token.
-- Verify the app is installed on the target organization.
+### Enterprise Apply Succeeds but Org Plan Fails
+
+* The org was just created — verify the enterprise workflow successfully installed the app on it (check the workflow log for the installation ID).
+* Verify the per-org installation ID in the org's `.auto.tfvars` matches the ID from the workflow log.
+
+### "Install enterprise app" Step Reports Errors
+
+* Verify the App Client ID (`Iv23li…`) in `enterprise.auto.tfvars` is correct.
+* Verify the app has the **Enterprise organisation installations: Read & write** permission.
+* The API may return `422` if the app is already installed — this is expected and skipped.
 
 ### Plan Shows Unexpected Changes
 
-Settings may have been changed manually in the GitHub UI. Terraform syncs them back to match your configuration on the next apply.
+Settings may have been changed manually in the GitHub UI. Terraform syncs them back on the next apply.
 
 ### "Resource not accessible by integration"
 
-The GitHub App is missing a required permission. Update the app's permissions in the app settings page — the installation will prompt for re-approval.
+The GitHub App is missing a required permission. Update permissions in the app settings — the installation will prompt for re-approval.
+
+---
 
 ## Security Best Practices
 
-1. **Never commit the private key** — use GitHub Secrets only.
-2. **Use environment protection** — require approval for production changes.
-3. **Restrict app installation scope** — keep the app installed only on managed orgs.
-4. **Review plans carefully** — always check the plan output before approving.
-5. **Enable branch protection** — require PR reviews before merging to main.
-6. **Regenerate keys if compromised** — revoke old keys in the app settings.
-7. **Audit app activity** — review the organization audit log for app-initiated events.
+* **Never commit private keys** — use GitHub Secrets only.
+* **Use environment protection** — require approval for both `enterprise` and `org-*` environments.
+* **One app, scoped installations** — the enterprise installation can only manage enterprise-level resources; per-org installations can only manage their own org.
+* **Review plans carefully** — always check the plan output before approving.
+* **Enable branch protection** — require PR reviews before merging to main.
+* **Regenerate keys if compromised** — revoke old keys in the app settings and update the single `ENT_APP_PRIVATE_KEY` secret.
+* **Audit app activity** — review enterprise and org audit logs.
+
+---
 
 ## Resources
 
-- [GitHub Terraform Provider — App Authentication](https://registry.terraform.io/providers/integrations/github/latest/docs#github-app-installation)
-- [Creating a GitHub App](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps)
-- [Permissions Required for GitHub Apps](https://docs.github.com/en/rest/overview/permissions-required-for-github-apps)
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Terraform Documentation](https://www.terraform.io/docs)
+* [GitHub Terraform Provider — App Authentication](https://registry.terraform.io/providers/integrations/github/latest/docs#github-app-installation)
+* [Creating a GitHub App](https://docs.github.com/en/apps/creating-github-apps/about-creating-github-apps/about-creating-github-apps)
+* [Installing a GitHub App on Your Enterprise](https://docs.github.com/en/enterprise-cloud@latest/apps/using-github-apps/installing-a-github-app-on-your-enterprise)
+* [Automating Enterprise App Installations](https://docs.github.com/en/enterprise-cloud@latest/admin/managing-github-apps-for-your-enterprise/automate-installations)
+* [Enterprise Organization Resource](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/enterprise_organization)
+* [Organization Settings Resource](https://registry.terraform.io/providers/integrations/github/latest/docs/resources/organization_settings)
+* [GitHub Actions Documentation](https://docs.github.com/en/actions)

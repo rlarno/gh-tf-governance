@@ -13,8 +13,9 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 
-# ALLOW the committed org config (contains NO secrets)
-!terraform.auto.tfvars
+# ALLOW the committed config files (contain NO secrets)
+!enterprise.auto.tfvars
+!*.auto.tfvars
 
 # Ignore override files as they are usually used to override resources locally
 override.tf

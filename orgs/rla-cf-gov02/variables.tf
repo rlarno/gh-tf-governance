@@ -1,12 +1,12 @@
 # ─── GitHub App Authentication ───────────────────────────────────
 
 variable "github_app_id" {
-  description = "The ID of the GitHub App (visible on the app settings page)"
+  description = "The ID of the GitHub App installed on this organization"
   type        = string
 }
 
 variable "github_app_installation_id" {
-  description = "The installation ID of the GitHub App on the target organization"
+  description = "The installation ID of the GitHub App on this organization"
   type        = string
 }
 
@@ -19,7 +19,7 @@ variable "github_app_pem_file" {
 # ─── Organization ────────────────────────────────────────────────
 
 variable "github_organization" {
-  description = "Name of the existing GitHub Organization to manage"
+  description = "Name of the GitHub Organization to manage"
   type        = string
 }
 
@@ -184,21 +184,48 @@ variable "secret_scanning_push_protection_enabled_for_new_repositories" {
   default     = false
 }
 
-# Teams
+# ─── Teams ───────────────────────────────────────────────────────
+
 variable "teams" {
-  description = "Map of teams to create"
+  description = "Map of teams to create. Members is an optional map of username => role (member or maintainer)."
   type = map(object({
     description = string
     privacy     = string
+    members     = optional(map(string), {})
   }))
   default = {}
 }
 
-# Members
+# ─── Members ─────────────────────────────────────────────────────
+
 variable "members" {
-  description = "Map of organization members"
+  description = "Map of organization members (username => { role })"
   type = map(object({
     role = string
+  }))
+  default = {}
+}
+
+# ─── Repositories ────────────────────────────────────────────────
+
+variable "repositories" {
+  description = "Map of repositories to create"
+  type = map(object({
+    description            = optional(string, "")
+    visibility             = optional(string, "internal")
+    has_issues             = optional(bool, true)
+    has_discussions        = optional(bool, false)
+    has_projects           = optional(bool, true)
+    has_wiki               = optional(bool, false)
+    is_template            = optional(bool, false)
+    auto_init              = optional(bool, true)
+    allow_merge_commit     = optional(bool, true)
+    allow_squash_merge     = optional(bool, true)
+    allow_rebase_merge     = optional(bool, true)
+    allow_auto_merge       = optional(bool, false)
+    delete_branch_on_merge = optional(bool, true)
+    vulnerability_alerts   = optional(bool, true)
+    team_access            = optional(map(string), {})
   }))
   default = {}
 }

@@ -1,0 +1,117 @@
+name: "Org: Terraform Plan"
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'orgs/**'
+      - '.github/workflows/org-plan.yml'
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  # ── Detect which orgs changed ──────────────────────────────────
+  detect:
+    name: Detect changed orgs
+    runs-on: ubuntu-latest
+    outputs:
+      orgs: ${{ steps.changes.outputs.orgs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed org directories
+        id: changes
+        run: |
+          ORGS=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.sha }} \
+            | grep '^orgs/' \
+            | cut -d'/' -f2 \
+            | sort -u \
+            | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "orgs=${ORGS}" >> "$GITHUB_OUTPUT"
+          echo "Changed orgs: ${ORGS}"
+
+  # ── Plan each changed org ──────────────────────────────────────
+  terraform-plan:
+    name: "Plan: ${{ matrix.org }}"
+    needs: detect
+    if: needs.detect.outputs.orgs != '[]' && needs.detect.outputs.orgs != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        org: ${{ fromJson(needs.detect.outputs.orgs) }}
+
+    defaults:
+      run:
+        working-directory: orgs/${{ matrix.org }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false
+        env:
+          TF_VAR_github_app_pem_file: ${{ secrets.ENT_APP_PRIVATE_KEY }}
+        continue-on-error: true
+
+      - name: Add Plan Comment to PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        env:
+          PLAN: "${{ steps.plan.outputs.stdout }}"
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const output = `### 🏗️ Org \`${{ matrix.org }}\` — Terraform Plan
+
+            #### Format 🖌 \`${{ steps.fmt.outcome }}\`
+            #### Init ⚙️ \`${{ steps.init.outcome }}\`
+            #### Validate 🤖 \`${{ steps.validate.outcome }}\`
+            #### Plan 📖 \`${{ steps.plan.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`terraform
+            ${process.env.PLAN}
+            \`\`\`
+
+            </details>
+
+            *Pusher: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1

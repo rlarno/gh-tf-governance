@@ -13,6 +13,6 @@ terraform {
   #   resource_group_name  = "terraform-state-rg"
   #   storage_account_name = "tfstatexxxxxx"
   #   container_name       = "tfstate"
-  #   key                  = "github-org.tfstate"
+  #   key                  = "github-enterprise.tfstate"
   # }
 }

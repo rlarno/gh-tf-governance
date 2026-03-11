@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════════╗
-# ║  Organization configuration                                    ║
+# ║  rla-cf-gov02 organization configuration                       ║
 # ║  This file IS committed to Git and auto-loaded by Terraform.   ║
 # ║                                                                ║
 # ║  The only secret injected via the workflow:                    ║
@@ -7,9 +7,11 @@
 # ║  DO NOT add the private key here.                              ║
 # ╚══════════════════════════════════════════════════════════════════╝
 
-# GitHub App Authentication
-github_app_id              = "YOUR_APP_ID"
-github_app_installation_id = "YOUR_INSTALLATION_ID"
+# GitHub App Authentication — uses the SAME enterprise app, with
+# the org-specific installation ID produced by the enterprise-apply
+# workflow when it installs the app on this organization.
+github_app_id              = "YOUR_ENT_APP_ID"
+github_app_installation_id = "YOUR_ORG_INSTALLATION_ID"
 
 # Organization Identity
 github_organization = "rla-cf-gov02"
@@ -17,8 +19,8 @@ billing_email       = "billing@example.com"
 
 # Organization Display Settings
 company_name              = "Your Company Name"
-organization_display_name = "Your Organization"
-description               = "Organization managed with Terraform"
+organization_display_name = "RLA CF Gov02"
+description               = "Governance organization managed with Terraform"
 blog_url                  = ""
 email                     = ""
 twitter_username          = ""
@@ -50,29 +52,50 @@ dependency_graph_enabled_for_new_repositories                = true
 secret_scanning_enabled_for_new_repositories                 = false
 secret_scanning_push_protection_enabled_for_new_repositories = false
 
-# Teams
+# ─── Teams ───────────────────────────────────────────────────────
+# The admin team is the link between the enterprise tier and the org tier.
+# Members listed here should match the admin_logins in enterprise.auto.tfvars.
+
 teams = {
+  "rla-cf-gov02_admin" = {
+    description = "Organization administrators"
+    privacy     = "secret"
+    members = {
+      "product-owner_rce" = "maintainer"
+    }
+  }
   "engineering" = {
     description = "Engineering team"
     privacy     = "closed"
+    members     = {}
   }
   "devops" = {
     description = "DevOps and Infrastructure team"
     privacy     = "closed"
-  }
-  "admins" = {
-    description = "Organization administrators"
-    privacy     = "secret"
+    members     = {}
   }
 }
 
-# Members
-# Note: Users must accept the invitation before they appear in the organization
+# ─── Members ─────────────────────────────────────────────────────
+# Note: Users must accept the invitation before they appear.
+
 members = {
   # "octocat" = {
   #   role = "member"
   # }
-  # "admin-user" = {
-  #   role = "admin"
+}
+
+# ─── Repositories ────────────────────────────────────────────────
+
+repositories = {
+  # "my-service" = {
+  #   description            = "My microservice"
+  #   visibility             = "internal"
+  #   auto_init              = true
+  #   delete_branch_on_merge = true
+  #   team_access = {
+  #     "engineering" = "push"
+  #     "devops"      = "maintain"
+  #   }
   # }
 }
